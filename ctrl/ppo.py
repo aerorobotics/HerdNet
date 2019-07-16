@@ -107,41 +107,59 @@ def main():
 
     param['n'] = param['num_birds'] + param['num_agents']
     param['a_u'] = 1.
-    param['ep_len'] = 250
+    param['ep_len'] = 601
 
     env.init(param)
 
-    model = PPO(env.observation_space.shape[0]).to(device)
+    model = PPO(2 + env.observation_space.shape[0]).to(device)
     score = 0.0
     epi_score = 0.0
     max_epi_score = 0.0
 
-    print_interval = 10
+    print_interval = 4
+
+    x_mask = np.zeros(param['num_dims'] * 2 * param['n'])
+    y_mask = np.zeros(param['num_dims'] * 2 * param['n'])
+
+    for agent_idx in range(param['n']):
+        x_mask[2 * agent_idx * param['num_dims'] : (2 * agent_idx + 1) * param['num_dims'] - 1] = 1
+        y_mask[2 * agent_idx * param['num_dims'] + 1 : (2 * agent_idx + 1) * param['num_dims']] = 1
 
     for n_epi in range(10000):
         done = False
-        x = env.reset()
+        x = env.reset() - x_mask
+
+        v_d = np.array([-np.sin(0), np.cos(0)])
+
         for i in range(param['ep_len']):
-            prob = model.pi(torch.from_numpy(x).float().to(device))
+            prob = model.pi(torch.from_numpy(np.concatenate([x, v_d])).float().to(device))
             m = Categorical(prob)
             u = m.sample().item()
 
-            x_prime = env.step(u)
+            # circle tracking goal
+            x_prime = env.step(u) - np.sin(i / (param['ep_len'] / (2 * np.pi))) * y_mask - np.cos(i / (param['ep_len'] / (2 * np.pi))) * x_mask
+            v_d_prime = np.array([-np.sin(i/(param['ep_len'] / (2 * np.pi))), np.cos(i/(param['ep_len'] / (2 * np.pi)))])
 
             if(n_epi > 1000):
                 env.render()
 
             sum_x = np.zeros(param['num_dims'])
+            sum_v = np.zeros(param['num_dims'])
             for i in range(param['num_birds']):
                 sum_x += x_prime[2 * i * param['num_dims'] : (2 * i + 1) * param['num_dims']]
+                sum_v += x_prime[(2 * i + 1) * param['num_dims']: 2 * (i + 1) * param['num_dims']]
 
-            reward = (2 - np.linalg.norm(sum_x/param['num_birds'])) / 2
+            reward = 3 - 0.5 * np.linalg.norm(sum_x/param['num_birds']) - 0 * np.linalg.norm(sum_v/param['num_birds'] - v_d)
 
             score += reward
             
-            model.put_data((x, u, reward, x_prime, prob[u].item(), False))
+            model.put_data((np.concatenate([x, v_d]), u, reward, np.concatenate([x_prime, v_d_prime]), prob[u].item(), False))
 
             x = x_prime
+            v_d = v_d_prime
+
+            if(i % 200 == 0 and i != 0):
+                model.train_net()
 
             if done:
                 break
@@ -152,7 +170,6 @@ def main():
             env.save_epi(f"logs/episode-{n_epi}-score-{score/(print_interval * param['ep_len'])}.pkl")
             score = 0.0
 
-        model.train_net()
 
     env.close()
 

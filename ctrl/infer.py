@@ -72,12 +72,12 @@ def main():
 
         centroidx, centroidy = [], []
         trajx, trajy = [], []
-        for i in range(600):
+        for i in range(100):
             prob = model.pi(torch.from_numpy(s).float().to(device))
             m = Categorical(prob)
             a = m.sample().item()
-            trajx.append(1 * np.cos(i / (100/np.pi)))
-            trajy.append(1 * np.sin(i / (100/np.pi)))
+            trajx.append(1 * np.cos(i / (50/np.pi)))
+            trajy.append(1 * np.sin(i / (50/np.pi)))
             s_prime = env.step(a) 
 
             x, y = [], []
